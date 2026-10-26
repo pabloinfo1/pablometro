@@ -193,7 +193,6 @@ function hayRiesgoRealNieve(horaObj) {
   const precipMm = parsearPrecipitacionMm(horaObj.precipitacion_mm);
   const probPrecip = parsearProbabilidadPct(horaObj.prob_precipitacion) ?? 0;
 
-  // Evitar falsos positivos de cotas provinciales altas en días templados o secos
   const hayPrecipitacionPrevista = precipMm > 0 || probPrecip >= 35;
   const haceFrioParaNieve = (tempNum !== null && tempNum <= 6) || cotaNum <= 700;
 
@@ -320,22 +319,6 @@ function actualizarThemeColorNavegador() {
   metaTheme.setAttribute('content', isDark ? '#0f172a' : '#f8fafc');
 }
 
-/* --- BLOQUEO DE ZOOM iOS Y ARRASTRE DE RATÓN EN PC --- */
-function bloquearZoomIOS() {
-  let lastTouchEnd = 0;
-  document.addEventListener('touchend', (event) => {
-    const now = Date.now();
-    if (now - lastTouchEnd <= 300) {
-      event.preventDefault();
-    }
-    lastTouchEnd = now;
-  }, { passive: false });
-
-  document.addEventListener('gesturestart', (event) => {
-    event.preventDefault();
-  }, { passive: false });
-}
-
 function habilitarScrollArrastre(contenedor) {
   if (!contenedor) return;
   let isDown = false;
@@ -374,8 +357,6 @@ function habilitarScrollArrastre(contenedor) {
   });
 }
 
-bloquearZoomIOS();
-
 /* --- NAVEGACIÓN INFERIOR DINÁMICA --- */
 function actualizarBarraNavegacion(seccionActiva = 'tiempo') {
   const mapaBotones = {
@@ -402,7 +383,7 @@ function actualizarBarraNavegacion(seccionActiva = 'tiempo') {
   });
 }
 
-/* --- CONFIGURACIÓN PWA (EVENTOS NATIVOS DE INSTALACIÓN) --- */
+/* --- CONFIGURACIÓN PWA --- */
 function inicializarPWA() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -518,8 +499,11 @@ function extraerDatosAvanzadosActuales(data, actualSincronizado) {
   const actual = actualSincronizado || data.actual || {};
   const dia0 = (Array.isArray(data.proximos_dias) && data.proximos_dias[0]) || {};
 
+  const { horaActualNum } = obtenerRelojMunicipio(data?.municipio?.id_ine);
+  const esDeNoche = horaActualNum < 7 || horaActualNum >= 21;
+
   return {
-    uv: primerValorDefinido(actual.uv, dia0.uv_max),
+    uv: esDeNoche ? 0 : primerValorDefinido(actual.uv, dia0.uv_max),
     nieveRaw: primerValorDefinido(actual.cota_nieve, dia0.cota_nieve),
     tormenta: primerValorDefinido(actual.prob_tormenta, dia0.prob_tormenta),
     sensacion: primerValorDefinido(actual.sensacion_termica, actual.temperatura),
@@ -740,7 +724,7 @@ function cerrarModalAlerta() {
   }, 300);
 }
 
-/* --- LÓGICA METEOROLÓGICA (CON CANCELACIÓN DE CONDICIONES DE CARRERA) --- */
+/* --- LÓGICA METEOROLÓGICA --- */
 async function cargarTiempo(ine, silencioso = false, forzar = false) {
   if (currentWeatherAbortController) {
     currentWeatherAbortController.abort();
@@ -873,7 +857,6 @@ function renderizarCarrusel(horasArray, titulo = 'Próximas horas', esDiaFuturo 
     let detallesExtraHoraHTML = '';
     const itemsExtraHora = [];
 
-    // Mostrar el dato forzosamente si genera alerta, o si el usuario lo tiene activado en preferencias.
     const mostrarSensacion = advPrefs.sensacion || motivoFrio || motivoCalor;
     const mostrarViento = advPrefs.viento || motivoViento;
     const mostrarNieve = advPrefs.nieve || motivoNieve;
@@ -963,7 +946,6 @@ function renderizarCarrusel(horasArray, titulo = 'Próximas horas', esDiaFuturo 
     carrusel.appendChild(card);
   });
 
-  // Posicionamiento inteligente del scroll tras pintar las tarjetas
   requestAnimationFrame(() => {
     if (esDiaFuturo && horasArray.length > 0) {
       const targetIndex = horasArray.findIndex(h => {
@@ -1002,7 +984,6 @@ function renderizarModoLifestyle(actualSincronizado, proximas24Horas = []) {
   let horasEvaluar = [];
 
   if (mode === 'moto') {
-    // Excluir horas de madrugada profunda (01:00 a 06:00) salvo que se consulte en esa misma franja
     const ventana12h = [actual, ...proximas24Horas.slice(0, 12)];
     const horasRuta = ventana12h.filter(h => {
       const hn = getHoraNum(h);
@@ -1010,7 +991,6 @@ function renderizarModoLifestyle(actualSincronizado, proximas24Horas = []) {
     });
     horasEvaluar = horasRuta.length > 0 ? horasRuta : ventana12h.slice(0, 6);
   } else if (mode === 'botellon') {
-    // Si se consulta por la mañana o mediodía (06:00 - 17:00), evaluar la tarde/noche de hoy (18:00 - 04:00)
     if (horaActual >= 6 && horaActual < 18) {
       const horasTardeNoche = proximas24Horas.filter(h => {
         const hn = getHoraNum(h);
@@ -1018,7 +998,6 @@ function renderizarModoLifestyle(actualSincronizado, proximas24Horas = []) {
       }).slice(0, 11);
       horasEvaluar = horasTardeNoche.length > 0 ? horasTardeNoche : [actual, ...proximas24Horas.slice(0, 10)];
     } else {
-      // Si ya es tarde/noche, evaluar desde ahora hasta el final de la madrugada
       const ventanaActual = [actual, ...proximas24Horas.slice(0, 10)].filter(h => {
         const hn = getHoraNum(h);
         return hn >= 18 || hn <= 5;
@@ -1034,7 +1013,6 @@ function renderizarModoLifestyle(actualSincronizado, proximas24Horas = []) {
   const maxRacha = Math.max(...horasEvaluar.map(h => obtenerNumeroValido(h.rachas_viento, h.viento_kmh) ?? 0));
   const hayNieve = horasEvaluar.some(h => hayRiesgoRealNieve(h));
 
-  // Sensación térmica máxima exclusiva de horas nocturnas (>=20h o <=05h) para "Noche tropical"
   const horasNocturnas = horasEvaluar.filter(h => {
     const hn = getHoraNum(h);
     return hn >= 20 || hn <= 5;
@@ -1134,11 +1112,25 @@ function renderizarUI() {
   document.getElementById('ui-municipio').textContent = obtenerNombreMunicipioLimpio(data);
   document.getElementById('ui-temp-actual').textContent = actualSincronizado.temperatura ?? '--';
   document.getElementById('ui-desc-actual').textContent = repararTextoMojibake(actualSincronizado.estado_cielo ?? '--');
+  
+  // Mostrar Temperatura Máxima y Mínima de hoy en la tarjeta principal
+  const tmaxminEl = document.getElementById('ui-tmaxmin-actual');
+  const dia0 = (Array.isArray(data.proximos_dias) && data.proximos_dias[0]) || {};
+  if (tmaxminEl) {
+    const tmax = dia0.temp_max;
+    const tmin = dia0.temp_min;
+    if (tmax !== undefined && tmin !== undefined && tmax !== '--' && tmin !== '--') {
+      tmaxminEl.textContent = `Máx. ${tmax}° · Mín. ${tmin}°`;
+      tmaxminEl.classList.remove('hidden');
+    } else {
+      tmaxminEl.classList.add('hidden');
+    }
+  }
+
   document.getElementById('ui-humedad').textContent = `${actualSincronizado.humedad ?? '--'}%`;
   document.getElementById('ui-viento').textContent = `${actualSincronizado.viento_kmh ?? '--'} km/h`;
   document.getElementById('ui-icono-actual').textContent = actualSincronizado.icono || 'cloud';
 
-  // Alertas y Avisos Meteorológicos (AEMET)
   const alertasDiv = document.getElementById('ui-alertas');
   const alertasActivas = extraerAlertasActivas(data);
 
@@ -1174,17 +1166,12 @@ function renderizarUI() {
     }
   }
 
-  // Modos Dinámicos de Estilo de Vida
   renderizarModoLifestyle(actualSincronizado, proximas24Horas);
 
-  // Datos extra configurables por el usuario
   const extraDiv = document.getElementById('ui-datos-extra');
   const showAnyAdv = Object.values(advPrefs).some(Boolean);
 
   if (showAnyAdv && extraDiv) {
-    extraDiv.classList.remove('hidden');
-    extraDiv.classList.add('flex');
-
     const { uv, nieveRaw, tormenta, sensacion, racha, direccion } = extraerDatosAvanzadosActuales(data, actualSincronizado);
     const tarjetasExtra = [];
 
@@ -1220,14 +1207,22 @@ function renderizarUI() {
       tarjetasExtra.push(crearChipExtra('air', 'Rachas viento', `${velTxt}${dirTxt}`));
     }
 
-    extraDiv.innerHTML = tarjetasExtra.join('');
+    // Si solo está activa la precipitación, ocultar el contenedor extra general ya que se muestra en el carrusel
+    if (tarjetasExtra.length > 0) {
+      extraDiv.classList.remove('hidden');
+      extraDiv.classList.add('flex');
+      extraDiv.innerHTML = tarjetasExtra.join('');
+    } else {
+      extraDiv.classList.add('hidden');
+      extraDiv.classList.remove('flex');
+      extraDiv.innerHTML = '';
+    }
   } else if (extraDiv) {
     extraDiv.classList.add('hidden');
     extraDiv.classList.remove('flex');
     extraDiv.innerHTML = '';
   }
 
-  // Renderizado del carrusel
   if (diaSeleccionadoIndex !== null && data.proximos_dias?.[diaSeleccionadoIndex]) {
     const diaSel = data.proximos_dias[diaSeleccionadoIndex];
     const horasDiaSel = obtenerHorasParaDia(data, diaSel, diaSeleccionadoIndex);
@@ -1258,14 +1253,15 @@ function renderizarListaDias(data) {
     if (index === 0) return;
 
     const horasDelDia = obtenerHorasParaDia(data, dia, index);
-    
-    // Permitir abrir cualquier día futuro que disponga de tramos horarios en la predicción de AEMET
     const hasHoras = horasDelDia.length > 0;
     const isSelected = diaSeleccionadoIndex === index;
 
     const row = document.createElement('div');
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+
     const clasesInteractivas = hasHoras
-      ? 'cursor-pointer hover:bg-md-surface-container-high active:bg-md-surface-container-high'
+      ? 'cursor-pointer hover:bg-md-surface-container-high active:bg-md-surface-container-high focus:outline-none focus:ring-1 focus:ring-md-primary'
       : '';
     const clasesSeleccionado = isSelected
       ? 'bg-md-surface-container-high border-l-4 border-l-md-primary'
@@ -1273,19 +1269,28 @@ function renderizarListaDias(data) {
 
     row.className = `flex justify-between items-center p-4 border-b border-border-color last:border-0 transition-all ${clasesInteractivas} ${clasesSeleccionado}`;
 
+    const ejecutarAccionDia = () => {
+      if (!hasHoras) return;
+      if (diaSeleccionadoIndex === index) {
+        diaSeleccionadoIndex = null;
+        renderizarUI();
+      } else {
+        diaSeleccionadoIndex = index;
+        renderizarUI();
+        const seccionHoras = document.getElementById('seccion-horas');
+        if (seccionHoras) {
+          const y = seccionHoras.getBoundingClientRect().top + window.scrollY - 16;
+          window.scrollTo({ top: y, behavior: 'smooth' });
+        }
+      }
+    };
+
     if (hasHoras) {
-      row.addEventListener('click', () => {
-        if (diaSeleccionadoIndex === index) {
-          diaSeleccionadoIndex = null;
-          renderizarUI();
-        } else {
-          diaSeleccionadoIndex = index;
-          renderizarUI();
-          const seccionHoras = document.getElementById('seccion-horas');
-          if (seccionHoras) {
-            const y = seccionHoras.getBoundingClientRect().top + window.scrollY - 16;
-            window.scrollTo({ top: y, behavior: 'smooth' });
-          }
+      row.addEventListener('click', ejecutarAccionDia);
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          ejecutarAccionDia();
         }
       });
     }
@@ -1327,7 +1332,6 @@ function calcularDistancia(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-/* --- LÓGICA DE GEOLOCALIZACIÓN REUTILIZABLE --- */
 function ubicarPorGPS(iconoEl, textoEl, callbackOnSuccess = null) {
   if (!navigator.geolocation) {
     mostrarToast('Tu navegador no soporta geolocalización', 'location_disabled');
@@ -1386,7 +1390,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const welcomeHintContainer = document.getElementById('welcome-hint-container');
   const welcomePrivacyLink = document.getElementById('welcome-privacy-link');
 
-  const uiMunicipioHeader = document.getElementById('ui-municipio');
+  const uiMunicipioWrap = document.getElementById('ui-municipio-wrap');
   const btnTiempo = document.getElementById('btn-tiempo');
   const btnVolverHoy = document.getElementById('btn-volver-hoy');
   const btnSearch = document.getElementById('btn-search');
@@ -1442,7 +1446,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseFaqModal = document.getElementById('btn-close-faq-modal');
   const btnOkFaqModal = document.getElementById('btn-ok-faq-modal');
 
-  // Modal Timeout Buttons
   const timeoutModal = document.getElementById('timeout-modal');
   const btnReloadApp = document.getElementById('btn-reload-app');
   const btnResetApp = document.getElementById('btn-reset-app');
@@ -1475,13 +1478,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Habilitar arrastre con ratón en el carrusel para PC
   const carruselHoras = document.getElementById('ui-carrusel-horas');
   if (carruselHoras) {
     habilitarScrollArrastre(carruselHoras);
   }
 
-  /* --- DETECCIÓN MÓVIL PARA EL WELCOME HINT --- */
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (welcomeHintContainer) {
     if (isMobile) {
@@ -1501,7 +1502,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* --- GESTIÓN DEL MODAL DE PRIVACIDAD --- */
   const openPrivacyModal = () => {
     privacyModal.classList.remove('hidden');
     privacyModal.classList.add('flex');
@@ -1533,7 +1533,6 @@ document.addEventListener('DOMContentLoaded', () => {
     welcomePrivacyLink.addEventListener('click', openPrivacyModal);
   }
 
-  /* --- GESTIÓN DEL MODAL DE PREGUNTAS FRECUENTES (FAQ) --- */
   const openFaqModal = () => {
     faqModal.classList.remove('hidden');
     faqModal.classList.add('flex');
@@ -1569,7 +1568,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* --- CIERRES DE MODALES ADICIONALES --- */
   const closeSearchModal = (volverATiempo = true) => {
     if (!searchModal || searchModal.classList.contains('hidden')) return;
     searchModal.classList.add('hidden');
@@ -1661,7 +1659,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  /* --- BUSCADOR, HISTORIAL RECIENTE Y BIENVENIDA --- */
   const renderizarMunicipiosRecientes = () => {
     const recientes = obtenerMunicipiosRecientes();
     if (recientes.length === 0) {
@@ -1676,7 +1673,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       ${recientes.map(m => `
         <div class="p-4 flex items-center justify-between border-b border-border-color active:bg-md-surface-container hover:bg-md-surface-container/50 cursor-pointer transition"
-             data-ine="${escaparHTML(m.id_ine)}">
+             data-ine="${escaparHTML(m.id_ine)}" role="button" tabindex="0">
           <div class="flex items-center gap-3 min-w-0">
             <span class="material-symbols-rounded text-text-muted text-[20px] shrink-0">schedule</span>
             <div class="flex flex-col min-w-0">
@@ -1714,8 +1711,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  if (uiMunicipioHeader) {
-    uiMunicipioHeader.addEventListener('click', abrirModalBuscador);
+  if (uiMunicipioWrap) {
+    uiMunicipioWrap.addEventListener('click', abrirModalBuscador);
   }
 
   if (btnWelcomeSearch) {
@@ -1760,42 +1757,27 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const isNumber = /^\d+$/.test(query);
-    let filtrados = [];
+    const candidatos = [];
+    for (const m of municipiosDB) {
+      let score = 0;
+      if (m._nombreNorm === query) score = 100;
+      else if (m._nombreNorm.startsWith(query)) score = 80;
+      else if (m._nombreNorm.includes(' ' + query) || m._nombreNorm.includes('-' + query) || m._nombreNorm.includes('/' + query)) score = 60;
+      else if (m._nombreNorm.includes(query)) score = 40;
+      else if (m._provNorm.startsWith(query)) score = 25;
+      else if (m._provNorm.includes(query)) score = 15;
 
-    if (isNumber) {
-      filtrados = municipiosDB
-        .filter(m => m.cps && m.cps.some(cp => cp.startsWith(query)))
-        .sort((a, b) => {
-          const exactA = a.cps.includes(query) ? 1 : 0;
-          const exactB = b.cps.includes(query) ? 1 : 0;
-          if (exactB !== exactA) return exactB - exactA;
-          return a.nombre.localeCompare(b.nombre, 'es');
-        })
-        .slice(0, 15);
-    } else {
-      const candidatos = [];
-      for (const m of municipiosDB) {
-        let score = 0;
-        if (m._nombreNorm === query) score = 100;
-        else if (m._nombreNorm.startsWith(query)) score = 80;
-        else if (m._nombreNorm.includes(' ' + query) || m._nombreNorm.includes('-' + query) || m._nombreNorm.includes('/' + query)) score = 60;
-        else if (m._nombreNorm.includes(query)) score = 40;
-        else if (m._provNorm.startsWith(query)) score = 25;
-        else if (m._provNorm.includes(query)) score = 15;
-
-        if (score > 0) {
-          candidatos.push({ m, score });
-        }
+      if (score > 0) {
+        candidatos.push({ m, score });
       }
-
-      candidatos.sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        return a.m.nombre.localeCompare(b.m.nombre, 'es');
-      });
-
-      filtrados = candidatos.slice(0, 15).map(item => item.m);
     }
+
+    candidatos.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.m.nombre.localeCompare(b.m.nombre, 'es');
+    });
+
+    const filtrados = candidatos.slice(0, 15).map(item => item.m);
 
     if (filtrados.length === 0) {
       searchResults.innerHTML = `<div class="p-8 text-center text-text-muted">No se encontraron municipios para "${escaparHTML(queryRaw)}"</div>`;
@@ -1804,7 +1786,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     searchResults.innerHTML = filtrados.map(m => `
       <div class="p-4 flex flex-col border-b border-border-color active:bg-md-surface-container hover:bg-md-surface-container/50 cursor-pointer transition"
-           data-ine="${escaparHTML(m.id_ine)}">
+           data-ine="${escaparHTML(m.id_ine)}" role="button" tabindex="0">
         <span class="font-medium text-lg text-text-main">${escaparHTML(m.nombre)}</span>
         <span class="text-sm text-text-muted">${escaparHTML(m.provincia)}</span>
       </div>
@@ -1816,6 +1798,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = e.target.closest('[data-ine]');
       if (item && item.dataset.ine) {
         window.seleccionarMunicipio(item.dataset.ine);
+      }
+    });
+    searchResults.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        const item = e.target.closest('[data-ine]');
+        if (item && item.dataset.ine) {
+          window.seleccionarMunicipio(item.dataset.ine);
+        }
       }
     });
   }
@@ -1837,6 +1827,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (searchInput) {
     searchInput.addEventListener('input', (e) => renderizarResultadosBusqueda(e.target.value));
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const primerResultado = searchResults.querySelector('[data-ine]');
+        if (primerResultado && primerResultado.dataset.ine) {
+          window.seleccionarMunicipio(primerResultado.dataset.ine);
+        }
+      }
+    });
   }
 
   window.seleccionarMunicipio = (ine) => {
@@ -1861,7 +1859,6 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarTiempo(ineNormalizado);
   };
 
-  /* --- MENÚ DE OPCIONES --- */
   if (btnOptions) {
     btnOptions.addEventListener('click', () => {
       closeSearchModal(false);
@@ -1957,7 +1954,6 @@ document.addEventListener('DOMContentLoaded', () => {
     trackEvent('options_menu_click', { button: 'aemet_info' });
   });
 
-  /* --- AJUSTES DE TEMA Y MODOS LIFESTYLE --- */
   const updateSettingsUI = () => {
     const currentTheme = localStorage.getItem('app_theme') || 'system';
     const currentColor = localStorage.getItem('app_color') || 'blue';
@@ -2057,7 +2053,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* --- DESPLEGABLE DE DATOS METEOROLÓGICOS EXTRA --- */
   if (btnToggleAdvMenu) {
     btnToggleAdvMenu.addEventListener('click', () => {
       advOptionsList.classList.toggle('hidden');
@@ -2083,7 +2078,18 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSettingsUI();
   actualizarBarraNavegacion('tiempo');
 
-  /* --- CARGA INICIAL EN PARALELO --- */
+  /* --- CIERRE DE MODALES CON TECLA ESCAPE --- */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeSearchModal(true);
+      closeOptionsModal(true);
+      closeIosModal();
+      closePrivacyModal();
+      closeFaqModal();
+      cerrarModalAlerta();
+    }
+  });
+
   const cargarMunicipiosDB = async () => {
     registrarTareaCarga();
     try {
@@ -2130,12 +2136,20 @@ document.addEventListener('DOMContentLoaded', () => {
         bottomNav.classList.remove('flex');
       }
       actualizarBloqueoScrollBody();
-      cargarMunicipiosDB();
+      
+      // Cargar municipios de forma diferida si ya hay guardado o tras la interacción inicial
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => cargarMunicipiosDB());
+      } else {
+        setTimeout(cargarMunicipiosDB, 1000);
+      }
     } else {
-      Promise.all([
-        cargarTiempo(savedIne),
-        cargarMunicipiosDB()
-      ]);
+      cargarTiempo(savedIne);
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => cargarMunicipiosDB());
+      } else {
+        setTimeout(cargarMunicipiosDB, 1000);
+      }
     }
   };
 
