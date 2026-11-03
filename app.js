@@ -68,13 +68,13 @@ function finalizarTareaCarga() {
     const modal = document.getElementById('timeout-modal');
     const panel = document.getElementById('timeout-modal-panel');
     if (modal && !modal.classList.contains('hidden')) {
-       modal.classList.add('opacity-0');
-       if (panel) panel.classList.add('scale-95');
-       setTimeout(() => {
-         modal.classList.add('hidden');
-         modal.classList.remove('flex');
-         actualizarBloqueoScrollBody();
-       }, 300);
+      modal.classList.add('opacity-0');
+      if (panel) panel.classList.add('scale-95');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        actualizarBloqueoScrollBody();
+      }, 300);
     }
   }
 }
@@ -736,11 +736,17 @@ async function cargarTiempo(ine, silencioso = false, forzar = false) {
   if (!silencioso) setEstadoCarga(true);
   try {
     const refreshParam = forzar ? '&refresh=1' : '';
+    
+    // Obtener la zona de aviso si existe en la BD
+    const zonaParam = getZonaAviso(ine) ? `&zona_aviso=${getZonaAviso(ine)}` : '';
+    
     const fetchOptions = {
       signal: controller.signal,
       ...(forzar ? { cache: 'no-cache' } : {})
     };
-    const res = await fetch(`${WORKER_URL}?ine=${encodeURIComponent(ine)}${refreshParam}`, fetchOptions);
+    
+    // Incluir la zona_aviso en la llamada a la API
+    const res = await fetch(`${WORKER_URL}?ine=${encodeURIComponent(ine)}${zonaParam}${refreshParam}`, fetchOptions);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -770,6 +776,16 @@ async function cargarTiempo(ine, silencioso = false, forzar = false) {
     }
     finalizarTareaCarga();
   }
+}
+
+function getZonaAviso(ine) {
+  if (municipiosDB && municipiosDB.length > 0) {
+    const mun = municipiosDB.find(m => m.id_ine === ine);
+    if (mun && mun.zona_aviso) {
+      return mun.zona_aviso;
+    }
+  }
+  return null;
 }
 
 function renderizarCarrusel(horasArray, titulo = 'Próximas horas', esDiaFuturo = false) {
