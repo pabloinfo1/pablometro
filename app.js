@@ -2141,7 +2141,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  const iniciarApp = () => {
+  const iniciarApp = async () => {
+    // 1. Esperamos obligatoriamente a cargar la base de datos de municipios y zonas
+    await cargarMunicipiosDB();
+
     const savedIne = localStorage.getItem('saved_ine');
 
     if (!savedIne) {
@@ -2152,20 +2155,9 @@ document.addEventListener('DOMContentLoaded', () => {
         bottomNav.classList.remove('flex');
       }
       actualizarBloqueoScrollBody();
-      
-      // Cargar municipios de forma diferida si ya hay guardado o tras la interacción inicial
-      if ('requestIdleCallback' in window) {
-        requestIdleCallback(() => cargarMunicipiosDB());
-      } else {
-        setTimeout(cargarMunicipiosDB, 1000);
-      }
     } else {
+      // 2. Ahora sí pedimos el tiempo, porque la zona_aviso ya está en memoria
       cargarTiempo(savedIne);
-      if ('requestIdleCallback' in window) {
-        requestIdleCallback(() => cargarMunicipiosDB());
-      } else {
-        setTimeout(cargarMunicipiosDB, 1000);
-      }
     }
   };
 
