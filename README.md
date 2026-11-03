@@ -32,3 +32,4 @@ El proyecto está dividido en dos piezas desacopladas que se comunican de forma 
 * **JavaScript Moderno (Vanilla JS)** sin dependencias pesadas.
 * **Cloudflare Workers & Cache API** para el servidor proxy sin coste.
 * **AEMET OpenData API** como fuente oficial de datos meteorológicos de España.
+* **Gemini** Pro 3.1 y Argon 4 como modelos de IA.
