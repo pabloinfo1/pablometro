@@ -68,13 +68,13 @@ function finalizarTareaCarga() {
     const modal = document.getElementById('timeout-modal');
     const panel = document.getElementById('timeout-modal-panel');
     if (modal && !modal.classList.contains('hidden')) {
-      modal.classList.add('opacity-0');
-      if (panel) panel.classList.add('scale-95');
-      setTimeout(() => {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-        actualizarBloqueoScrollBody();
-      }, 300);
+       modal.classList.add('opacity-0');
+       if (panel) panel.classList.add('scale-95');
+       setTimeout(() => {
+         modal.classList.add('hidden');
+         modal.classList.remove('flex');
+         actualizarBloqueoScrollBody();
+       }, 300);
     }
   }
 }
@@ -736,17 +736,11 @@ async function cargarTiempo(ine, silencioso = false, forzar = false) {
   if (!silencioso) setEstadoCarga(true);
   try {
     const refreshParam = forzar ? '&refresh=1' : '';
-    
-    // Obtener la zona de aviso si existe en la BD
-    const zonaParam = getZonaAviso(ine) ? `&zona_aviso=${getZonaAviso(ine)}` : '';
-    
     const fetchOptions = {
       signal: controller.signal,
       ...(forzar ? { cache: 'no-cache' } : {})
     };
-    
-    // Incluir la zona_aviso en la llamada a la API
-    const res = await fetch(`${WORKER_URL}?ine=${encodeURIComponent(ine)}${zonaParam}${refreshParam}`, fetchOptions);
+    const res = await fetch(`${WORKER_URL}?ine=${encodeURIComponent(ine)}${refreshParam}`, fetchOptions);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -776,16 +770,6 @@ async function cargarTiempo(ine, silencioso = false, forzar = false) {
     }
     finalizarTareaCarga();
   }
-}
-
-function getZonaAviso(ine) {
-  if (municipiosDB && municipiosDB.length > 0) {
-    const mun = municipiosDB.find(m => m.id_ine === ine);
-    if (mun && mun.zona_aviso) {
-      return mun.zona_aviso;
-    }
-  }
-  return null;
 }
 
 function renderizarCarrusel(horasArray, titulo = 'Próximas horas', esDiaFuturo = false) {
@@ -2141,10 +2125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  const iniciarApp = async () => {
-    // 1. Esperamos obligatoriamente a cargar la base de datos de municipios y zonas
-    await cargarMunicipiosDB();
-
+  const iniciarApp = () => {
     const savedIne = localStorage.getItem('saved_ine');
 
     if (!savedIne) {
@@ -2155,9 +2136,20 @@ document.addEventListener('DOMContentLoaded', () => {
         bottomNav.classList.remove('flex');
       }
       actualizarBloqueoScrollBody();
+      
+      // Cargar municipios de forma diferida si ya hay guardado o tras la interacción inicial
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => cargarMunicipiosDB());
+      } else {
+        setTimeout(cargarMunicipiosDB, 1000);
+      }
     } else {
-      // 2. Ahora sí pedimos el tiempo, porque la zona_aviso ya está en memoria
       cargarTiempo(savedIne);
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => cargarMunicipiosDB());
+      } else {
+        setTimeout(cargarMunicipiosDB, 1000);
+      }
     }
   };
 
